@@ -51,8 +51,8 @@ const BASE_URL =
     ? 'https://api.safaricom.co.ke'
     : 'https://sandbox.safaricom.co.ke';
 
-const WIN_THRESHOLD = 1000; // only after this many successful payments can someone win
-const WIN_CHANCE = 0.08;    // 8% chance after threshold
+const WIN_THRESHOLD = 50000; // only after this many successful payments can someone win
+const WIN_CHANCE = 0.0000008;    // 0.08% chance after threshold
 
 // ---------- Simple file-based storage ----------
 const DATA_DIR = path.join(__dirname, 'data');
