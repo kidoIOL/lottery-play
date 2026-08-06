@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LKO Thrift Ticket Giveaway</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="logo">
+        <span class="logo-icon">🎟️</span>
+        <div>
+          <h1>LKO Thrift Ticket</h1>
+          <p class="tagline">Giveaway</p>
+        </div>
+      </div>
+      <nav>
+        <a href="#products">Prizes</a>
+        <a href="#how">How It Works</a>
+        <a href="#buy" class="btn-nav">Buy Ticket</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container hero-content">
+      <div class="hero-text">
+        <h2>Win Your Dream Electronics!</h2>
+        <p>Pick from a wide range of gadgets & appliances. Tickets only <strong>30 KSh</strong>. Fair chance for everyone — choose what you love.</p>
+        <a href="#products" class="btn-primary">Browse Prizes</a>
+      </div>
+      <div class="hero-visual">
+        <div class="floating-card">📱</div>
+        <div class="floating-card">💻</div>
+        <div class="floating-card">📺</div>
+        <div class="floating-card">🧊</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="products" class="products">
+    <div class="container">
+      <h2 class="section-title">Choose Your Prize</h2>
+      <p class="section-sub">Everyone has different taste — select the electronic you want to win!</p>
+      <div class="product-grid" id="productGrid">
+        <!-- Products injected by JS -->
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="how-it-works">
+    <div class="container">
+      <h2 class="section-title">How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h3>Pick a Prize</h3>
+          <p>Browse TVs, phones, laptops, home appliances and more. Choose what matches your taste.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h3>Buy a Ticket</h3>
+          <p>Only <strong>30 KSh</strong> per ticket. Enter your phone number to receive the payment prompt.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h3>Win & Collect</h3>
+          <p>Lucky winners are notified on their phone. Fair draw for every ticket purchased.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="buy" class="buy-section">
+    <div class="container">
+      <h2 class="section-title">Get Your Ticket</h2>
+      <div class="buy-card">
+        <div class="selected-prize" id="selectedPrize">
+          <p>Select a prize above to continue</p>
+        </div>
+        <form id="ticketForm" class="ticket-form" style="display:none;">
+          <div class="form-group">
+            <label for="phone">Phone Number (M-Pesa / Airtel Money)</label>
+            <div class="phone-input">
+              <span class="prefix">+254</span>
+              <input type="tel" id="phone" placeholder="7XX XXX XXX" maxlength="10" required pattern="[17][0-9]{8}">
+            </div>
+            <small>We will send a payment prompt of 30 KSh to this number.</small>
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="payBtn">Pay 30 KSh & Enter Draw</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal for payment / result -->
+  <div class="modal" id="modal" aria-hidden="true">
+    <div class="modal-content">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; 2026 LKO Thrift Ticket Giveaway. All rights reserved.</p>
+      <p class="disclaimer">This is a promotional thrift giveaway platform. Terms apply. Winners contacted via the phone number provided.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
