@@ -110,6 +110,7 @@ const productGrid = document.getElementById('productGrid');
 const selectedPrizeEl = document.getElementById('selectedPrize');
 const ticketForm = document.getElementById('ticketForm');
 const phoneInput = document.getElementById('phone');
+const emailInput = document.getElementById('email');
 const modal = document.getElementById('modal');
 const modalBody = document.getElementById('modalBody');
 const modalClose = document.getElementById('modalClose');
@@ -194,22 +195,23 @@ ticketForm.addEventListener('submit', async (e) => {
   }
 
   const fullPhone = '+254' + phone;
+  const email = emailInput.value.trim();
 
-  // 1. Show "sending prompt" state
+  // 1. Show checkout initialization state
   openModal(`
     <div class="spinner"></div>
-    <h3>Sending Payment Prompt…</h3>
-    <p>A request for <strong>30 KSh</strong> is being sent to<br><strong>${fullPhone}</strong></p>
-    <p style="font-size:0.9rem">Check your phone and enter your M-Pesa PIN.</p>
+    <h3>Opening secure checkout…</h3>
+    <p>Your payment for <strong>30 KSh</strong> is being prepared.</p>
   `);
 
   try {
-    // 2. Call backend to initiate STK Push
+    // 2. Initialize the Paystack hosted checkout
     const res = await fetch(`${API_BASE}/api/stkpush`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phone: phone,
+        email: email,
         productId: selectedProduct.id,
         productName: selectedProduct.name
       })
@@ -220,22 +222,15 @@ ticketForm.addEventListener('submit', async (e) => {
     if (!data.success) {
       openModal(`
         <div class="modal-body-icon">⚠️</div>
-        <h3>Could not send prompt</h3>
+        <h3>Could not start payment</h3>
         <p>${data.message || 'Please try again.'}</p>
         <button class="btn-primary" onclick="document.getElementById('modalClose').click()">OK</button>
       `);
       return;
     }
 
-    // 3. Prompt was sent – now poll for result
-    openModal(`
-      <div class="spinner"></div>
-      <h3>Waiting for payment…</h3>
-      <p>Enter your M-Pesa PIN on your phone.<br>This screen will update automatically.</p>
-    `);
-
-    const checkoutId = data.checkoutRequestID;
-    pollPaymentStatus(checkoutId, fullPhone);
+    // 3. Paystack redirects back to the callback page after checkout.
+    window.location.href = data.authorization_url;
 
   } catch (err) {
     console.error(err);
