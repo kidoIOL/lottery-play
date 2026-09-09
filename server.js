@@ -1,6 +1,6 @@
 /**
  * LKO Thrift Ticket Giveaway – Backend
- * M-Pesa STK Push (Daraja API) + hidden lottery logic
+ * Paystack Payment Integration + hidden lottery logic
  *
  * Wins only possible from the 1000th successful purchase onward.
  * The counter and win chance are NEVER exposed to the customer.
@@ -20,44 +20,38 @@ app.use(express.static(__dirname));
 
 // ---------- Config ----------
 const {
-  CONSUMER_KEY,
-  CONSUMER_SECRET,
-  BUSINESS_SHORTCODE,
-  PASSKEY,
-  MPESA_ENV = 'sandbox',
-  CALLBACK_URL,
+  PAYSTACK_SECRET_KEY,
+  PAYSTACK_PUBLIC_KEY,
+  PAYSTACK_ENV = 'test',
   PORT = 3000,
-  TICKET_AMOUNT = 30
+  TICKET_AMOUNT = 3000 // 30 KSh in kobo
 } = process.env;
 
+// Check for missing config
 const missingConfig = [
-  ['CONSUMER_KEY', CONSUMER_KEY],
-  ['CONSUMER_SECRET', CONSUMER_SECRET],
-  ['BUSINESS_SHORTCODE', BUSINESS_SHORTCODE],
-  ['PASSKEY', PASSKEY],
-  ['CALLBACK_URL', CALLBACK_URL]
+  ['PAYSTACK_SECRET_KEY', PAYSTACK_SECRET_KEY],
+  ['PAYSTACK_PUBLIC_KEY', PAYSTACK_PUBLIC_KEY]
 ]
   .filter(([, value]) => !value)
   .map(([name]) => name);
 
 if (missingConfig.length) {
   console.warn(
-    `⚠️  Missing Daraja config in .env: ${missingConfig.join(', ')}. STK Push will not work until these are set.`
+    `⚠️  Missing Paystack config in .env: ${missingConfig.join(', ')}. Payments will not work until these are set.`
   );
 }
 
-const BASE_URL =
-  MPESA_ENV === 'production'
-    ? 'https://api.safaricom.co.ke'
-    : 'https://sandbox.safaricom.co.ke';
+// Paystack API URL
+const PAYSTACK_API_URL = 'https://api.paystack.co';
 
-const WIN_THRESHOLD = 50000; // only after this many successful payments can someone win
-const WIN_CHANCE = 0.0000008;    // 0.08% chance after threshold
+// Hidden win configuration
+const WIN_THRESHOLD = 1000; // only after this many successful payments can someone win
+const WIN_CHANCE = 0.08;    // 8% chance after threshold (0.08 = 8%)
 
 // ---------- Simple file-based storage ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const COUNTER_FILE = path.join(DATA_DIR, 'ticket-counter.json');
-const PENDING_FILE = path.join(DATA_DIR, 'pending.json');
+const TRANSACTIONS_FILE = path.join(DATA_DIR, 'transactions.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -84,106 +78,60 @@ function incrementTicketCount() {
   return data.count;
 }
 
-// In-memory + file map of CheckoutRequestID → status
-// { status: 'pending' | 'success' | 'failed', won: boolean, product, phone, receipt, message }
-let pending = readJSON(PENDING_FILE, {});
+// In-memory + file map of transactions
+// { reference: { status: 'pending' | 'success' | 'failed', won: boolean, email, product, amount, ticketNumber, message } }
+let transactions = readJSON(TRANSACTIONS_FILE, {});
 
-function savePending() {
-  writeJSON(PENDING_FILE, pending);
+function saveTransactions() {
+  writeJSON(TRANSACTIONS_FILE, transactions);
 }
 
 // ---------- Helpers ----------
-function formatPhone(phone) {
-  let p = String(phone).replace(/\D/g, '');
-  if (p.startsWith('0')) p = '254' + p.slice(1);
-  if (p.startsWith('7') || p.startsWith('1')) p = '254' + p;
-  if (!p.startsWith('254')) p = '254' + p;
-  return p;
-}
-
-function getTimestamp() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return (
-    d.getFullYear() +
-    pad(d.getMonth() + 1) +
-    pad(d.getDate()) +
-    pad(d.getHours()) +
-    pad(d.getMinutes()) +
-    pad(d.getSeconds())
-  );
-}
-
-function generatePassword(timestamp) {
-  return Buffer.from(`${BUSINESS_SHORTCODE}${PASSKEY}${timestamp}`).toString('base64');
-}
-
-// ---------- Secure Access Token (cached) ----------
-// Token is valid for ~3600 seconds. We cache it in memory and
-// refresh a bit early to avoid race conditions near expiry.
-let tokenCache = {
-  accessToken: null,
-  expiresAt: 0          // Unix timestamp in ms
-};
-
-/**
- * Securely generate (or reuse) a Daraja OAuth access token.
- * - Consumer Key & Secret never leave the server
- * - Token is cached in memory only (never written to disk)
- * - Automatically refreshes before expiry
- */
-async function getAccessToken() {
-  const now = Date.now();
-
-  // Reuse cached token if still valid (with 60-second safety buffer)
-  if (tokenCache.accessToken && now < tokenCache.expiresAt - 60_000) {
-    return tokenCache.accessToken;
-  }
-
-  // Validate credentials exist
-  if (!CONSUMER_KEY || !CONSUMER_SECRET) {
-    throw new Error('CONSUMER_KEY and CONSUMER_SECRET must be set in .env');
-  }
-
-  const auth = Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString('base64');
-
-  const res = await fetch(
-    `${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
-    {
-      method: 'GET',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Token request failed (${res.status}): ${errText}`);
-  }
-
-  const data = await res.json();
-
-  if (!data.access_token) {
-    throw new Error('No access_token in response: ' + JSON.stringify(data));
-  }
-
-  // Cache the token (expires_in is usually 3599 seconds)
-  const expiresInMs = (data.expires_in || 3599) * 1000;
-  tokenCache = {
-    accessToken: data.access_token,
-    expiresAt: now + expiresInMs
-  };
-
-  console.log(`🔐 New access token generated (valid ~${Math.round(expiresInMs / 1000)}s)`);
-  return tokenCache.accessToken;
-}
-
 function decideWin(ticketNumber) {
   // Hidden rule: only from 1000th successful payment onward
   if (ticketNumber < WIN_THRESHOLD) return false;
+  // Random chance: 8% (0.08)
   return Math.random() < WIN_CHANCE;
+}
+
+// Generate a unique reference
+function generateReference() {
+  return 'LKO-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+}
+
+async function verifyTransaction(reference) {
+  const transaction = transactions[reference];
+  if (!transaction) return null;
+  if (transaction.status !== 'pending') return transaction;
+
+  const response = await fetch(`${PAYSTACK_API_URL}/transaction/verify/${reference}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
+  });
+  const data = await response.json();
+
+  if (!data.status) throw new Error(data.message || 'Failed to verify payment');
+
+  const paymentData = data.data;
+  if (paymentData.status === 'success') {
+    const ticketNumber = incrementTicketCount();
+    const won = decideWin(ticketNumber);
+    transaction.status = 'success';
+    transaction.won = won;
+    transaction.ticketNumber = ticketNumber;
+    transaction.paystackData = paymentData;
+    transaction.message = won
+      ? `🎉 Congratulations! You won the ${transaction.productName}! We will contact you shortly.`
+      : `✅ Payment received. Ticket #${ticketNumber}. You did not win this time. Try again for another chance!`;
+    transaction.verifiedAt = new Date().toISOString();
+  } else if (['failed', 'abandoned'].includes(paymentData.status)) {
+    transaction.status = 'failed';
+    transaction.message = paymentData.gateway_response || 'Payment was not successful';
+    transaction.paystackData = paymentData;
+  }
+
+  saveTransactions();
+  return transaction;
 }
 
 // ---------- Routes ----------
@@ -193,211 +141,475 @@ app.get('/api/health', (req, res) => {
   res.json({
     service: 'LKO Thrift Ticket Backend',
     status: 'running',
-    env: MPESA_ENV
+    paystack_mode: PAYSTACK_ENV,
+    paystack_configured: !!PAYSTACK_SECRET_KEY
   });
 });
 
 /**
- * POST /api/stkpush
- * Body: { phone, productId, productName }
- * Initiates STK Push for 30 KSh
+ * POST /api/initialize-payment
+ * Body: { email, productName, productId }
+ * Initializes Paystack payment
  */
-app.post('/api/stkpush', async (req, res) => {
+app.post('/api/initialize-payment', async (req, res) => {
   try {
-    const { phone, productId, productName } = req.body;
+    const { email, productName = 'LKO Thrift Ticket', productId = 'ticket' } = req.body;
 
     if (missingConfig.length) {
       return res.status(500).json({
         success: false,
-        message: `Missing Daraja config: ${missingConfig.join(', ')}. Copy env.example to .env and fill in real values.`
+        message: `Missing Paystack config: ${missingConfig.join(', ')}. Copy .env.example to .env and fill in real values.`
       });
     }
 
-    if (!phone || !productName) {
-      return res.status(400).json({ success: false, message: 'Phone and product are required' });
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required' 
+      });
     }
 
-    const formattedPhone = formatPhone(phone);
-    if (!/^254[17]\d{8}$/.test(formattedPhone)) {
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid Kenyan phone number. Use format 07XXXXXXXX or 01XXXXXXXX'
+        message: 'Invalid email format'
       });
     }
 
-    const token = await getAccessToken();
-    const timestamp = getTimestamp();
-    const password = generatePassword(timestamp);
+    const amount = Number(TICKET_AMOUNT);
+    const reference = generateReference();
 
+    // Prepare Paystack request
     const payload = {
-      BusinessShortCode: BUSINESS_SHORTCODE,
-      Password: password,
-      Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
-      Amount: Number(TICKET_AMOUNT),
-      PartyA: formattedPhone,
-      PartyB: BUSINESS_SHORTCODE,
-      PhoneNumber: formattedPhone,
-      CallBackURL: CALLBACK_URL,
-      AccountReference: `LKO-${productId || 'ticket'}`,
-      TransactionDesc: `LKO Ticket - ${productName}`.slice(0, 13) // max 13 chars recommended
+      email: email,
+      amount: amount,
+      reference: reference,
+      callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/payment-callback.html`,
+      metadata: {
+        productId: productId,
+        productName: productName,
+        custom_fields: [
+          {
+            display_name: "Ticket Type",
+            variable_name: "ticket_type",
+            value: productName
+          },
+          {
+            display_name: "Reference",
+            variable_name: "reference",
+            value: reference
+          }
+        ]
+      }
     };
 
-    const stkRes = await fetch(`${BASE_URL}/mpesa/stkpush/v1/processrequest`, {
+    // Initialize payment with Paystack
+    const response = await fetch(`${PAYSTACK_API_URL}/transaction/initialize`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
     });
 
-    const stkData = await stkRes.json();
+    const data = await response.json();
 
-    if (stkData.ResponseCode !== '0') {
-      console.error('STK Push failed:', stkData);
+    if (!data.status) {
+      console.error('Paystack initialization failed:', data);
       return res.status(400).json({
         success: false,
-        message: stkData.CustomerMessage || stkData.errorMessage || 'Failed to send payment prompt',
-        details: stkData
+        message: data.message || 'Failed to initialize payment',
+        details: data
       });
     }
 
-    // Store pending transaction
-    const checkoutId = stkData.CheckoutRequestID;
-    pending[checkoutId] = {
+    // Store transaction
+    transactions[reference] = {
       status: 'pending',
-      phone: formattedPhone,
+      email: email,
       productId: productId || null,
-      productName,
-      amount: Number(TICKET_AMOUNT),
+      productName: productName,
+      amount: amount / 100, // Convert back to KSh for display
+      amountInKobo: amount,
       createdAt: new Date().toISOString(),
       won: false,
-      receipt: null,
-      message: null
+      ticketNumber: null,
+      message: null,
+      paystackData: data.data
     };
-    savePending();
+    saveTransactions();
 
-    console.log(`STK Push sent → ${formattedPhone} | CheckoutRequestID: ${checkoutId}`);
+    console.log(`💰 Payment initialized → ${email} | Reference: ${reference}`);
+    console.log(`   Authorization URL: ${data.data.authorization_url}`);
 
     res.json({
       success: true,
-      message: 'Payment prompt sent to your phone. Enter your M-Pesa PIN.',
-      checkoutRequestID: checkoutId,
-      merchantRequestID: stkData.MerchantRequestID
+      message: 'Payment initialized successfully',
+      reference: reference,
+      authorization_url: data.data.authorization_url,
+      access_code: data.data.access_code
     });
+
   } catch (err) {
-    console.error('STK Push error:', err);
+    console.error('Payment initialization error:', err);
     res.status(500).json({
       success: false,
-      message: 'Server error while initiating payment. Please try again.'
+      message: 'Server error while initializing payment. Please try again.'
     });
   }
 });
 
 /**
- * GET /api/status/:checkoutRequestID
- * Frontend polls this after STK Push is accepted
+ * Compatibility endpoint for the existing frontend payment form.
+ * Paystack checkout is used here; the browser opens the returned URL.
  */
-app.get('/api/status/:checkoutRequestID', (req, res) => {
-  const id = req.params.checkoutRequestID;
-  const record = pending[id];
+app.post('/api/stkpush', async (req, res) => {
+  try {
+    const { phone, email, productName = 'LKO Thrift Ticket', productId = 'ticket' } = req.body;
+    const normalizedPhone = String(phone || '').replace(/\D/g, '');
 
-  if (!record) {
-    return res.status(404).json({ success: false, message: 'Transaction not found' });
+    if (!/^[17]\d{8}$/.test(normalizedPhone)) {
+      return res.status(400).json({ success: false, message: 'Valid Kenyan phone number is required' });
+    }
+    const normalizedEmail = String(email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: 'A valid email address is required' });
+    }
+    if (missingConfig.length) {
+      return res.status(500).json({ success: false, message: `Missing Paystack config: ${missingConfig.join(', ')}` });
+    }
+
+    const initialization = await fetch(`${PAYSTACK_API_URL}/transaction/initialize`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: normalizedEmail,
+        amount: Number(TICKET_AMOUNT),
+        reference: generateReference(),
+        callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/payment-callback.html`,
+        metadata: { productId, productName, phone: `+254${normalizedPhone}` }
+      })
+    });
+    const data = await initialization.json();
+
+    if (!data.status) {
+      return res.status(400).json({ success: false, message: data.message || 'Failed to initialize payment' });
+    }
+
+    const reference = data.data.reference;
+    transactions[reference] = {
+      status: 'pending',
+      email: normalizedEmail,
+      phone: `+254${normalizedPhone}`,
+      productId,
+      productName,
+      amount: Number(TICKET_AMOUNT) / 100,
+      amountInKobo: Number(TICKET_AMOUNT),
+      createdAt: new Date().toISOString(),
+      won: false,
+      ticketNumber: null,
+      message: null,
+      paystackData: data.data
+    };
+    saveTransactions();
+
+    res.json({
+      success: true,
+      checkoutRequestID: reference,
+      reference,
+      authorization_url: data.data.authorization_url
+    });
+  } catch (err) {
+    console.error('Payment initialization error:', err);
+    res.status(500).json({ success: false, message: 'Server error while initializing payment. Please try again.' });
+  }
+});
+
+/**
+ * GET /api/verify-payment/:reference
+ * Verifies payment with Paystack and processes ticket
+ */
+app.get('/api/verify-payment/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    
+    // Check if transaction exists
+    const transaction = transactions[reference];
+    if (!transaction) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Transaction not found' 
+      });
+    }
+
+    // If already processed, return stored result
+    if (transaction.status === 'success' || transaction.status === 'failed') {
+      return res.json({
+        success: true,
+        status: transaction.status,
+        won: transaction.won,
+        ticketNumber: transaction.ticketNumber,
+        message: transaction.message,
+        email: transaction.email,
+        productName: transaction.productName
+      });
+    }
+
+    // Verify with Paystack
+    const response = await fetch(`${PAYSTACK_API_URL}/transaction/verify/${reference}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+      }
+    });
+
+    const data = await response.json();
+
+    if (!data.status) {
+      console.error('Paystack verification failed:', data);
+      return res.status(400).json({
+        success: false,
+        message: data.message || 'Failed to verify payment'
+      });
+    }
+
+    const paymentData = data.data;
+    const isSuccessful = paymentData.status === 'success';
+
+    if (isSuccessful) {
+      // Payment successful - process ticket
+      const ticketNumber = incrementTicketCount();
+      const won = decideWin(ticketNumber);
+
+      // Update transaction
+      transaction.status = 'success';
+      transaction.won = won;
+      transaction.ticketNumber = ticketNumber;
+      transaction.paystackData = paymentData;
+      transaction.message = won
+        ? `🎉 Congratulations! You won the ${transaction.productName}! We will contact you shortly.`
+        : `✅ Payment received. Ticket #${ticketNumber}. You did not win this time. Try again for another chance!`;
+      transaction.verifiedAt = new Date().toISOString();
+
+      console.log(
+        `✅ Payment success | Ticket #${ticketNumber} | Won: ${won} | Email: ${transaction.email}`
+      );
+
+      if (won) {
+        console.log(`🏆 WINNER! Ticket #${ticketNumber} - ${transaction.email}`);
+      }
+    } else {
+      // Payment failed
+      transaction.status = 'failed';
+      transaction.message = paymentData.gateway_response || 'Payment was not successful';
+      transaction.paystackData = paymentData;
+      
+      console.log(`❌ Payment failed: ${paymentData.gateway_response}`);
+    }
+
+    saveTransactions();
+
+    res.json({
+      success: true,
+      status: transaction.status,
+      won: transaction.won,
+      ticketNumber: transaction.ticketNumber,
+      message: transaction.message,
+      email: transaction.email,
+      productName: transaction.productName
+    });
+
+  } catch (err) {
+    console.error('Payment verification error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while verifying payment. Please try again.'
+    });
+  }
+});
+
+/**
+ * GET /api/status/:reference
+ * Frontend polls this after payment is initialized
+ */
+app.get('/api/status/:reference', async (req, res) => {
+  const reference = req.params.reference;
+  let transaction = transactions[reference];
+
+  if (!transaction) {
+    return res.status(404).json({ 
+      success: false, 
+      message: 'Transaction not found' 
+    });
   }
 
+  try {
+    transaction = await verifyTransaction(reference);
+  } catch (err) {
+    console.error('Payment status verification error:', err);
+    return res.status(502).json({
+      success: false,
+      status: transaction.status,
+      message: 'Unable to verify payment right now. Please try again.'
+    });
+  }
+
+  // Return status (never reveal threshold info)
   res.json({
     success: true,
-    status: record.status,          // pending | success | failed
-    won: record.won,                // true only if they actually won
-    productName: record.productName,
-    receipt: record.receipt,
-    message: record.message,
-    phone: record.phone
+    status: transaction.status,     // pending | success | failed
+    won: transaction.won || false,  // true only if they actually won
+    ticketNumber: transaction.ticketNumber || null,
+    email: transaction.email,
+    productName: transaction.productName,
+    amount: transaction.amount,
+    message: transaction.message,
+    createdAt: transaction.createdAt
   });
 });
 
 /**
- * POST /api/mpesa/callback
- * Safaricom calls this after the customer enters PIN (or cancels / times out)
+ * POST /api/webhook
+ * Paystack webhook for server-side verification (optional but recommended)
  */
-app.post('/api/mpesa/callback', (req, res) => {
-  // Always respond quickly so Safaricom does not retry
-  res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+app.post('/api/webhook', (req, res) => {
+  // Always respond quickly
+  res.sendStatus(200);
 
   try {
-    const callback = req.body?.Body?.stkCallback;
-    if (!callback) {
-      console.warn('Invalid callback body:', JSON.stringify(req.body));
-      return;
+    // Verify webhook signature (optional but recommended for production)
+    const signature = req.headers['x-paystack-signature'];
+    // In production, verify the signature here
+    
+    const event = req.body;
+    
+    // Handle charge.success event
+    if (event.event === 'charge.success') {
+      const data = event.data;
+      const reference = data.reference;
+      
+      console.log(`💰 Webhook: Payment successful for ${reference}`);
+      
+      // Check if transaction exists and is still pending
+      const transaction = transactions[reference];
+      if (transaction && transaction.status === 'pending') {
+        // Process the payment (similar to verify-payment logic)
+        const ticketNumber = incrementTicketCount();
+        const won = decideWin(ticketNumber);
+        
+        transaction.status = 'success';
+        transaction.won = won;
+        transaction.ticketNumber = ticketNumber;
+        transaction.paystackData = data;
+        transaction.message = won
+          ? `🎉 Congratulations! You won the ${transaction.productName}! We will contact you shortly.`
+          : `✅ Payment received. Ticket #${ticketNumber}. You did not win this time.`;
+        
+        console.log(`💰 Webhook processed | Ticket #${ticketNumber} | Won: ${won}`);
+        saveTransactions();
+      }
     }
-
-    const {
-      CheckoutRequestID,
-      ResultCode,
-      ResultDesc,
-      CallbackMetadata
-    } = callback;
-
-    console.log(`Callback received → ${CheckoutRequestID} | ResultCode: ${ResultCode}`);
-
-    const record = pending[CheckoutRequestID];
-    if (!record) {
-      console.warn('Unknown CheckoutRequestID:', CheckoutRequestID);
-      return;
-    }
-
-    if (ResultCode === 0) {
-      // Payment successful
-      const items = CallbackMetadata?.Item || [];
-      const receipt = items.find((i) => i.Name === 'MpesaReceiptNumber')?.Value || null;
-      const amount = items.find((i) => i.Name === 'Amount')?.Value;
-
-      // Increment the hidden global ticket counter
-      const ticketNumber = incrementTicketCount();
-      const won = decideWin(ticketNumber);
-
-      record.status = 'success';
-      record.receipt = receipt;
-      record.won = won;
-      record.ticketNumber = ticketNumber; // internal only
-      record.message = won
-        ? `Congratulations! You won the ${record.productName}. We will contact you shortly.`
-        : `Payment received. You did not win this time. Try again for another chance!`;
-
-      console.log(
-        `✅ Payment success | Ticket #${ticketNumber} | Won: ${won} | Receipt: ${receipt}`
-      );
-    } else {
-      // Failed / cancelled / timeout
-      record.status = 'failed';
-      record.won = false;
-      record.message = ResultDesc || 'Payment was not completed.';
-      console.log(`❌ Payment failed: ${ResultDesc}`);
-    }
-
-    savePending();
   } catch (err) {
-    console.error('Callback processing error:', err);
+    console.error('Webhook processing error:', err);
   }
 });
 
-// Optional: simple admin endpoint to see counter (protect this in production!)
-app.get('/api/admin/stats', (req, res) => {
-  // In real production put a secret key check here
+/**
+ * GET /api/public-key
+ * Returns the Paystack public key for frontend
+ */
+app.get('/api/public-key', (req, res) => {
   res.json({
-    totalSuccessfulTickets: getTicketCount(),
-    winThreshold: WIN_THRESHOLD,
-    note: 'Wins only possible after the threshold. This endpoint is for you only.'
+    success: true,
+    publicKey: PAYSTACK_PUBLIC_KEY || 'pk_test_c656a72e19b8f0e62df2fa9e1e599be64d94f096',
+    paystack_mode: PAYSTACK_ENV || 'test'
+  });
+});
+
+/**
+ * GET /api/admin/stats
+ * Admin endpoint to see counter (protected with secret key)
+ */
+app.get('/api/admin/stats', (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  
+  // Check admin key
+  if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Unauthorized - Invalid admin key' 
+    });
+  }
+
+  // Get statistics
+  const totalTickets = getTicketCount();
+  const totalTransactions = Object.keys(transactions).length;
+  const successfulTransactions = Object.values(transactions).filter(t => t.status === 'success').length;
+  const winners = Object.values(transactions).filter(t => t.won === true).length;
+  const pendingTransactions = Object.values(transactions).filter(t => t.status === 'pending').length;
+
+  res.json({
+    success: true,
+    data: {
+      totalSuccessfulTickets: totalTickets,
+      winThreshold: WIN_THRESHOLD,
+      winChance: `${WIN_CHANCE * 100}%`,
+      totalTransactions: totalTransactions,
+      successfulTransactions: successfulTransactions,
+      winners: winners,
+      pendingTransactions: pendingTransactions,
+      paystackMode: PAYSTACK_ENV || 'test',
+      note: 'Wins only possible after the threshold. This endpoint is for admin use only.'
+    }
+  });
+});
+
+/**
+ * GET /api/admin/transactions
+ * List all transactions (protected)
+ */
+app.get('/api/admin/transactions', (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  
+  if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Unauthorized - Invalid admin key' 
+    });
+  }
+
+  // Return transactions (hide sensitive data)
+  const transactionList = Object.entries(transactions).map(([ref, data]) => ({
+    reference: ref,
+    email: data.email,
+    productName: data.productName,
+    amount: data.amount,
+    status: data.status,
+    won: data.won,
+    ticketNumber: data.ticketNumber,
+    createdAt: data.createdAt,
+    message: data.message
+  }));
+
+  res.json({
+    success: true,
+    data: transactionList
   });
 });
 
 // ---------- Start ----------
 app.listen(PORT, () => {
   console.log(`\n🎟️  LKO Thrift Ticket Backend running on http://localhost:${PORT}`);
-  console.log(`   Environment : ${MPESA_ENV}`);
-  console.log(`   Callback URL: ${CALLBACK_URL}`);
-  console.log(`   Ticket price: ${TICKET_AMOUNT} KSh`);
-  console.log(`   Win threshold: ticket #${WIN_THRESHOLD}+\n`);
+  console.log(`   💳 Paystack Mode: ${PAYSTACK_ENV || 'test'}`);
+  console.log(`   🔑 Paystack Public Key: ${PAYSTACK_PUBLIC_KEY?.substring(0, 30) || 'Not set'}...`);
+  console.log(`   💰 Ticket price: ${(Number(TICKET_AMOUNT) / 100).toFixed(2)} KSh`);
+  console.log(`   🎯 Win threshold: ticket #${WIN_THRESHOLD}+`);
+  console.log(`   🎲 Win chance: ${WIN_CHANCE * 100}% after threshold\n`);
+  console.log(`   📊 Admin stats: http://localhost:${PORT}/api/admin/stats`);
+  console.log(`   🔒 Use header: x-admin-key: ${process.env.ADMIN_SECRET_KEY || 'your_secret_key'}\n`);
 });

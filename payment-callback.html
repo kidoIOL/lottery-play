@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment status</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="container" style="padding-top:10vh;text-align:center">
+    <section class="buy-card">
+      <div id="result">
+        <div class="spinner"></div>
+        <h2>Confirming payment...</h2>
+        <p>Please wait while we confirm your transaction.</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    const apiBase = window.location.protocol === 'file:'
+      ? 'http://localhost:3000'
+      : window.location.origin;
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref');
+    const result = document.getElementById('result');
+
+    function showResult(title, message) {
+      result.innerHTML = `<h2>${title}</h2><p>${message}</p><p><a href="/">Return to the prize list</a></p>`;
+    }
+
+    async function confirmPayment() {
+      if (!reference) {
+        showResult('Payment not completed', 'No payment reference was returned.');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBase}/api/verify-payment/${encodeURIComponent(reference)}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          showResult('Payment could not be confirmed', data.message || 'Please contact support if money was deducted.');
+          return;
+        }
+        if (data.status === 'success') {
+          showResult(data.won ? 'You won!' : 'Payment received', data.message);
+        } else {
+          showResult('Payment not completed', data.message || 'The payment was cancelled or is still pending.');
+        }
+      } catch (error) {
+        showResult('Confirmation error', 'The payment server could not be reached. Please try again later.');
+      }
+    }
+
+    confirmPayment();
+  </script>
+</body>
+</html>
