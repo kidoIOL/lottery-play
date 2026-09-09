@@ -98,12 +98,12 @@ const products = [
   }
 ];
 
-// Backend API base URL – change this when you deploy
-// Local: http://localhost:3000
-// Production: https://your-api-domain.com
-const API_BASE = (window.location.protocol === 'file:' || window.location.origin === 'null')
-  ? 'http://localhost:3000'
-  : window.location.origin;
+// Firebase Hosting serves the frontend only; configure the separately deployed API.
+const API_BASE = window.PAYMENT_API_URL || (
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000'
+    : ''
+);
 
 // DOM elements
 const productGrid = document.getElementById('productGrid');
@@ -205,6 +205,10 @@ ticketForm.addEventListener('submit', async (e) => {
   `);
 
   try {
+    if (!API_BASE) {
+      throw new Error('Payment API URL is not configured');
+    }
+
     // 2. Initialize the Paystack hosted checkout
     const res = await fetch(`${API_BASE}/api/stkpush`, {
       method: 'POST',

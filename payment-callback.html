@@ -17,9 +17,13 @@
     </section>
   </main>
   <script>
-    const apiBase = window.location.protocol === 'file:'
-      ? 'http://localhost:3000'
-      : window.location.origin;
+    // Set this to the same public HTTPS URL as PAYMENT_API_URL in index.html.
+    window.PAYMENT_API_URL = '';
+    const apiBase = window.PAYMENT_API_URL || (
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000'
+        : ''
+    );
     const params = new URLSearchParams(window.location.search);
     const reference = params.get('reference') || params.get('trxref');
     const result = document.getElementById('result');
@@ -29,6 +33,11 @@
     }
 
     async function confirmPayment() {
+      if (!apiBase) {
+        showResult('Payment server not configured', 'The payment service has not been connected to this website yet.');
+        return;
+      }
+
       if (!reference) {
         showResult('Payment not completed', 'No payment reference was returned.');
         return;
