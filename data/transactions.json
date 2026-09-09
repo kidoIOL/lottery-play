@@ -466,5 +466,23 @@
       "access_code": "xpp5c4n9bur1441",
       "reference": "LKO-1788983295365-274lg9"
     }
+  },
+  "LKO-1788989452941-48d585": {
+    "status": "pending",
+    "email": "labanomonywa@gmail.com",
+    "phone": "+254114906881",
+    "productId": "camera",
+    "productName": "Digital Camera",
+    "amount": 30,
+    "amountInKobo": 3000,
+    "createdAt": "2026-09-09T21:30:53.653Z",
+    "won": false,
+    "ticketNumber": null,
+    "message": null,
+    "paystackData": {
+      "authorization_url": "https://checkout.paystack.com/kpmch7ql3wh34pk",
+      "access_code": "kpmch7ql3wh34pk",
+      "reference": "LKO-1788989452941-48d585"
+    }
   }
 }

@@ -64,13 +64,13 @@ Safaricom must be able to reach your server.
 
 ## 3. Frontend connection
 
-In `script.js` (frontend) the line:
+In `index.html`, set `PAYMENT_API_URL` to the public HTTPS URL where `server.js` is deployed:
 
 ```js
-const API_BASE = 'http://localhost:3000';
+window.PAYMENT_API_URL = 'https://your-api-domain.com';
 ```
 
-Change this to your live backend URL when you deploy.
+Firebase Hosting does not run `server.js`; the backend must be deployed separately (for example on Render, Railway, Cloud Run, or Firebase Functions). Configure `FRONTEND_URL` in the backend `.env` to the Firebase Hosting URL so Paystack can redirect back to `payment-callback.html`. The backend must also allow requests from the Firebase domain through CORS.
 
 ---
 
