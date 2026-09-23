@@ -16,7 +16,7 @@ const fetch = require('node-fetch');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname)));
 
 // ---------- Config ----------
 const {
@@ -63,7 +63,11 @@ function readJSON(file, fallback) {
 }
 
 function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.warn(`Could not persist ${path.basename(file)}: ${error.message}`);
+  }
 }
 
 function getTicketCount() {
@@ -452,13 +456,17 @@ app.get('/api/admin/transactions', (req, res) => {
 });
 
 // ---------- Start ----------
-app.listen(PORT, () => {
-  console.log(`\n🎟️  LKO Thrift Ticket Backend running on http://localhost:${PORT}`);
-  console.log(`   💳 Paystack Mode: ${PAYSTACK_ENV || 'test'}`);
-  console.log(`   🔑 Paystack Public Key: ${PAYSTACK_PUBLIC_KEY?.substring(0, 30) || 'Not set'}...`);
-  console.log(`   💰 Ticket price: ${(Number(TICKET_AMOUNT) / 100).toFixed(2)} KSh`);
-  console.log(`   🎯 Win threshold: ticket #${WIN_THRESHOLD}+`);
-  console.log(`   🎲 Win chance: ${WIN_CHANCE * 100}% after threshold\n`);
-  console.log(`   📊 Admin stats: http://localhost:${PORT}/api/admin/stats`);
-  console.log(`   🔒 Use header: x-admin-key: ${process.env.ADMIN_SECRET_KEY || 'your_secret_key'}\n`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n🎟️  LKO Thrift Ticket Backend running on http://localhost:${PORT}`);
+    console.log(`   💳 Paystack Mode: ${PAYSTACK_ENV || 'test'}`);
+    console.log(`   🔑 Paystack Public Key: ${PAYSTACK_PUBLIC_KEY?.substring(0, 30) || 'Not set'}...`);
+    console.log(`   💰 Ticket price: ${(Number(TICKET_AMOUNT) / 100).toFixed(2)} KSh`);
+    console.log(`   🎯 Win threshold: ticket #${WIN_THRESHOLD}+`);
+    console.log(`   🎲 Win chance: ${WIN_CHANCE * 100}% after threshold\n`);
+    console.log(`   📊 Admin stats: http://localhost:${PORT}/api/admin/stats`);
+    console.log(`   🔒 Use header: x-admin-key: ${process.env.ADMIN_SECRET_KEY || 'your_secret_key'}\n`);
+  });
+}
+
+module.exports = app;
