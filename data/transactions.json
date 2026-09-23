@@ -484,5 +484,77 @@
       "access_code": "kpmch7ql3wh34pk",
       "reference": "LKO-1788989452941-48d585"
     }
+  },
+  "LKO-1788991596912-299ow6": {
+    "status": "pending",
+    "email": "labanomonywa@gmail.com",
+    "phone": "114906881",
+    "productId": "iphone-16",
+    "productName": "iPhone 16",
+    "amount": 30,
+    "amountInKobo": 3000,
+    "createdAt": "2026-09-09T22:06:37.905Z",
+    "won": false,
+    "ticketNumber": null,
+    "message": null,
+    "paystackData": {
+      "authorization_url": "https://checkout.paystack.com/5yc5qbxo4hxrg9l",
+      "access_code": "5yc5qbxo4hxrg9l",
+      "reference": "LKO-1788991596912-299ow6"
+    }
+  },
+  "LKO-1790188390371-mx8w9o": {
+    "status": "pending",
+    "email": "labanomonywa@gmail.com",
+    "phone": "114906881",
+    "productId": "samsung-phone",
+    "productName": "Samsung Galaxy Phone",
+    "amount": 30,
+    "amountInKobo": 3000,
+    "createdAt": "2026-09-23T18:33:13.016Z",
+    "won": false,
+    "ticketNumber": null,
+    "message": null,
+    "paystackData": {
+      "authorization_url": "https://checkout.paystack.com/pv0ir4md8fayb27",
+      "access_code": "pv0ir4md8fayb27",
+      "reference": "LKO-1790188390371-mx8w9o"
+    }
+  },
+  "LKO-1790188689382-xafg9f": {
+    "status": "pending",
+    "email": "labanomonywa@gmail.com",
+    "phone": "114906881",
+    "productId": "blender",
+    "productName": "Blender / Juicer",
+    "amount": 30,
+    "amountInKobo": 3000,
+    "createdAt": "2026-09-23T18:38:31.380Z",
+    "won": false,
+    "ticketNumber": null,
+    "message": null,
+    "paystackData": {
+      "authorization_url": "https://checkout.paystack.com/dmc9w457hqxwfbz",
+      "access_code": "dmc9w457hqxwfbz",
+      "reference": "LKO-1790188689382-xafg9f"
+    }
+  },
+  "LKO-1790189319138-ajl4gg": {
+    "status": "pending",
+    "email": "labanomonywa@gmail.com",
+    "phone": "114906881",
+    "productId": "washing-machine",
+    "productName": "Washing Machine",
+    "amount": 30,
+    "amountInKobo": 3000,
+    "createdAt": "2026-09-23T18:48:41.251Z",
+    "won": false,
+    "ticketNumber": null,
+    "message": null,
+    "paystackData": {
+      "authorization_url": "https://checkout.paystack.com/456uswrgs1brf0s",
+      "access_code": "456uswrgs1brf0s",
+      "reference": "LKO-1790189319138-ajl4gg"
+    }
   }
 }

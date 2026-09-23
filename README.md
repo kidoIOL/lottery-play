@@ -1,108 +1,55 @@
-# LKO Thrift Ticket – Backend (M-Pesa STK Push)
+# LKO Thrift Ticket Backend
 
 ## What this does
-- Receives phone number + selected product from the frontend
-- Sends a real **M-Pesa STK Push** (Lipa Na M-Pesa Online) for **30 KSh**
-- Listens for the Safaricom callback
-- On successful payment:
-  - Increments a **hidden** ticket counter
-  - Only from the **1000th successful payment onward** can a customer win
-  - ~8% win chance after the threshold
-  - Tells the frontend whether the customer **won** or **did not win**
+- Initializes a Paystack hosted checkout for a selected product and a 30 KSh ticket.
+- Redirects customers to Paystack and verifies the returned transaction reference.
+- Increments a hidden ticket counter after successful payment.
+- Applies the server-side win rules and returns the result to the callback page.
 
-The counter and the 1000-ticket rule are **never** shown to the buyer.
+## Setup
 
----
-
-## 1. Setup
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-Edit `.env` and put your real credentials:
-
-```
-CONSUMER_KEY=your_actual_consumer_key
-CONSUMER_SECRET=your_actual_consumer_secret
-BUSINESS_SHORTCODE=174379          # sandbox default, change for production
-PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
-MPESA_ENV=sandbox                  # or production
-CALLBACK_URL=https://xxxx.ngrok-free.app/api/mpesa/callback
-PORT=3000
-TICKET_AMOUNT=30
-```
-
-### Install & run
+Install dependencies and start the API:
 
 ```bash
 npm install
 npm start
 ```
 
-Server will start on `http://localhost:3000`
+Create a `.env` file with your Paystack credentials:
 
----
+```env
+PAYSTACK_SECRET_KEY=your_secret_key
+PAYSTACK_PUBLIC_KEY=your_public_key
+PAYSTACK_ENV=test
+FRONTEND_URL=http://localhost:5500
+PORT=3000
+TICKET_AMOUNT=3000
+```
 
-## 2. Callback URL (very important)
+The server runs at `http://localhost:3000` by default.
 
-Safaricom must be able to reach your server.
+## Frontend connection
 
-**Local testing:**
-1. Install ngrok → `ngrok http 3000`
-2. Copy the HTTPS URL (e.g. `https://abc123.ngrok-free.app`)
-3. Put it in `.env`:
-   ```
-   CALLBACK_URL=https://abc123.ngrok-free.app/api/mpesa/callback
-   ```
-4. Restart the server
-
-**Production:** Use your real domain with HTTPS.
-
----
-
-## 3. Frontend connection
-
-In `index.html`, set `PAYMENT_API_URL` to the public HTTPS URL where `server.js` is deployed:
+Set `PAYMENT_API_URL` in `index.html` and `payment-callback.html` to the public HTTPS URL where `server.js` is deployed:
 
 ```js
 window.PAYMENT_API_URL = 'https://your-api-domain.com';
 ```
 
-Firebase Hosting does not run `server.js`; the backend must be deployed separately (for example on Render, Railway, Cloud Run, or Firebase Functions). Configure `FRONTEND_URL` in the backend `.env` to the Firebase Hosting URL so Paystack can redirect back to `payment-callback.html`. The backend must also allow requests from the Firebase domain through CORS.
+The frontend can be hosted separately. Configure `FRONTEND_URL` so Paystack redirects customers to `payment-callback.html`, and configure CORS for the frontend domain in production.
 
----
+## API endpoints
 
-## 4. API Endpoints
-
-| Method | Path                          | Description                          |
-|--------|-------------------------------|--------------------------------------|
-| POST   | `/api/stkpush`                | Start STK Push                       |
-| GET    | `/api/status/:checkoutId`     | Poll payment + win result            |
-| POST   | `/api/mpesa/callback`         | Safaricom callback (do not call)     |
-| GET    | `/api/admin/stats`            | See total successful tickets (yours only) |
-
----
-
-## 5. Sandbox test numbers
-
-When using sandbox, use the test phone numbers provided by Safaricom in the Daraja portal (usually `254708374149` and others).
-
----
-
-## 6. Going live (Production)
-
-1. Create a **production** app on Daraja
-2. Get new Consumer Key, Secret, Shortcode & Passkey
-3. Set `MPESA_ENV=production`
-4. Change `BASE_URL` automatically switches to `https://api.safaricom.co.ke`
-5. Use a real HTTPS domain for `CALLBACK_URL`
-6. Protect `/api/admin/stats` with a secret key
-
----
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Check API and Paystack configuration |
+| POST | `/api/initialize-payment` | Initialize a Paystack checkout |
+| GET | `/api/verify-payment/:reference` | Verify a Paystack transaction and process the ticket |
+| POST | `/api/webhook` | Receive Paystack payment events |
+| GET | `/api/public-key` | Return the configured Paystack public key |
 
 ## Security notes
-- Never put Consumer Key / Secret in the frontend
-- The win logic lives only on the server
-- Always wait for the **callback** before confirming a win (never trust the initial STK response alone)
+- Keep `PAYSTACK_SECRET_KEY` on the server only.
+- Use HTTPS for deployed frontend and backend URLs.
+- Payment success is determined by Paystack verification, not by the browser redirect alone.
+- The win logic and ticket counter remain server-side.
