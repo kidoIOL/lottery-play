@@ -1,7 +1,7 @@
 {
   "name": "lko-thrift-ticket-backend",
   "version": "1.0.0",
-  "description": "LKO Thrift Ticket Giveaway - M-Pesa STK Push backend",
+  "description": "LKO Thrift Ticket Giveaway - Paystack payment backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

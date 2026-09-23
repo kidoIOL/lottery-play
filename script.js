@@ -177,7 +177,7 @@ modal.addEventListener('click', (e) => {
   if (e.target === modal) closeModal();
 });
 
-// Form submit — real M-Pesa STK Push via backend
+// Form submit — initialize Paystack hosted checkout via backend
 ticketForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!selectedProduct) return;
@@ -209,8 +209,8 @@ ticketForm.addEventListener('submit', async (e) => {
       throw new Error('Payment API URL is not configured');
     }
 
-    // 2. Initialize the Paystack hosted checkout
-    const res = await fetch(`${API_BASE}/api/stkpush`, {
+    // 2. Ask the backend to initialize the Paystack hosted checkout
+    const res = await fetch(`${API_BASE}/api/initialize-payment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -246,78 +246,6 @@ ticketForm.addEventListener('submit', async (e) => {
     `);
   }
 });
-
-// Poll backend until payment result arrives
-function pollPaymentStatus(checkoutId, fullPhone) {
-  let attempts = 0;
-  const maxAttempts = 40; // ~2 minutes (every 3s)
-
-  const interval = setInterval(async () => {
-    attempts++;
-    try {
-      const res = await fetch(`${API_BASE}/api/status/${checkoutId}`);
-      const data = await res.json();
-
-      if (data.status === 'pending') {
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          openModal(`
-            <div class="modal-body-icon">⌛</div>
-            <h3>Still waiting…</h3>
-            <p>We have not received confirmation yet. If you paid, please contact support with your M-Pesa message.</p>
-            <button class="btn-primary" onclick="document.getElementById('modalClose').click()">OK</button>
-          `);
-        }
-        return; // keep polling
-      }
-
-      // Final result received
-      clearInterval(interval);
-      phoneInput.value = '';
-
-      if (data.status === 'success' && data.won) {
-        openModal(`
-          <div class="modal-body-icon">🎉</div>
-          <h3 style="color:#059669">YOU WON!</h3>
-          <p style="font-size:1.15rem;margin:12px 0">You have won the<br><strong>${data.productName}</strong>!</p>
-          <p>We will contact you shortly on <strong>${fullPhone}</strong> to arrange delivery or collection.</p>
-          <p style="font-size:0.85rem;color:var(--muted)">M-Pesa Receipt: ${data.receipt || '—'}</p>
-          <button class="btn-primary" style="margin-top:16px" onclick="document.getElementById('modalClose').click()">Awesome!</button>
-        `);
-      } else if (data.status === 'success') {
-        openModal(`
-          <div class="modal-body-icon">😔</div>
-          <h3 style="color:#b45309">You did not win this time</h3>
-          <p>Payment of <strong>30 KSh</strong> received for<br><strong>${data.productName}</strong>.</p>
-          <p>Your ticket was entered into the draw, but this was not a winning ticket.</p>
-          <p style="font-size:0.95rem">Try again — every ticket is another chance!</p>
-          <p style="font-size:0.85rem;color:var(--muted)">Receipt: ${data.receipt || '—'}</p>
-          <button class="btn-primary" style="margin-top:16px" onclick="document.getElementById('modalClose').click()">Buy Another Ticket</button>
-        `);
-      } else {
-        // failed / cancelled
-        openModal(`
-          <div class="modal-body-icon">❌</div>
-          <h3>Payment not completed</h3>
-          <p>${data.message || 'The payment was cancelled or timed out.'}</p>
-          <button class="btn-primary" onclick="document.getElementById('modalClose').click()">Try Again</button>
-        `);
-      }
-    } catch (err) {
-      console.error('Poll error:', err);
-      // keep trying until maxAttempts
-      if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        openModal(`
-          <div class="modal-body-icon">⚠️</div>
-          <h3>Could not confirm payment</h3>
-          <p>Please check your M-Pesa messages. If money left your account, contact support.</p>
-          <button class="btn-primary" onclick="document.getElementById('modalClose').click()">OK</button>
-        `);
-      }
-    }
-  }, 3000);
-}
 
 // Init
 renderProducts();

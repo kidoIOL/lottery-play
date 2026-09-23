@@ -99,39 +99,56 @@ function generateReference() {
   return 'LKO-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
 }
 
-async function verifyTransaction(reference) {
-  const transaction = transactions[reference];
-  if (!transaction) return null;
-  if (transaction.status !== 'pending') return transaction;
-
-  const response = await fetch(`${PAYSTACK_API_URL}/transaction/verify/${reference}`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
+async function initializePaystackPayment({ email, productName, productId, phone }) {
+  const reference = generateReference();
+  const amount = Number(TICKET_AMOUNT);
+  const response = await fetch(`${PAYSTACK_API_URL}/transaction/initialize`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email,
+      amount,
+      reference,
+      callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/payment-callback.html`,
+      metadata: {
+        productId,
+        productName,
+        ...(phone ? { phone } : {}),
+        custom_fields: [
+          { display_name: 'Ticket Type', variable_name: 'ticket_type', value: productName },
+          { display_name: 'Reference', variable_name: 'reference', value: reference }
+        ]
+      }
+    })
   });
   const data = await response.json();
 
-  if (!data.status) throw new Error(data.message || 'Failed to verify payment');
-
-  const paymentData = data.data;
-  if (paymentData.status === 'success') {
-    const ticketNumber = incrementTicketCount();
-    const won = decideWin(ticketNumber);
-    transaction.status = 'success';
-    transaction.won = won;
-    transaction.ticketNumber = ticketNumber;
-    transaction.paystackData = paymentData;
-    transaction.message = won
-      ? `🎉 Congratulations! You won the ${transaction.productName}! We will contact you shortly.`
-      : `✅ Payment received. Ticket #${ticketNumber}. You did not win this time. Try again for another chance!`;
-    transaction.verifiedAt = new Date().toISOString();
-  } else if (['failed', 'abandoned'].includes(paymentData.status)) {
-    transaction.status = 'failed';
-    transaction.message = paymentData.gateway_response || 'Payment was not successful';
-    transaction.paystackData = paymentData;
+  if (!data.status) {
+    const error = new Error(data.message || 'Failed to initialize payment');
+    error.paystackResponse = data;
+    throw error;
   }
 
+  transactions[reference] = {
+    status: 'pending',
+    email,
+    phone: phone || null,
+    productId,
+    productName,
+    amount: amount / 100,
+    amountInKobo: amount,
+    createdAt: new Date().toISOString(),
+    won: false,
+    ticketNumber: null,
+    message: null,
+    paystackData: data.data
+  };
   saveTransactions();
-  return transaction;
+
+  return { reference, data: data.data };
 }
 
 // ---------- Routes ----------
@@ -153,7 +170,7 @@ app.get('/api/health', (req, res) => {
  */
 app.post('/api/initialize-payment', async (req, res) => {
   try {
-    const { email, productName = 'LKO Thrift Ticket', productId = 'ticket' } = req.body;
+    const { email, phone, productName = 'LKO Thrift Ticket', productId = 'ticket' } = req.body;
 
     if (missingConfig.length) {
       return res.status(500).json({
@@ -177,156 +194,28 @@ app.post('/api/initialize-payment', async (req, res) => {
       });
     }
 
-    const amount = Number(TICKET_AMOUNT);
-    const reference = generateReference();
+    const payment = await initializePaystackPayment({ email, phone, productName, productId });
 
-    // Prepare Paystack request
-    const payload = {
-      email: email,
-      amount: amount,
-      reference: reference,
-      callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/payment-callback.html`,
-      metadata: {
-        productId: productId,
-        productName: productName,
-        custom_fields: [
-          {
-            display_name: "Ticket Type",
-            variable_name: "ticket_type",
-            value: productName
-          },
-          {
-            display_name: "Reference",
-            variable_name: "reference",
-            value: reference
-          }
-        ]
-      }
-    };
-
-    // Initialize payment with Paystack
-    const response = await fetch(`${PAYSTACK_API_URL}/transaction/initialize`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await response.json();
-
-    if (!data.status) {
-      console.error('Paystack initialization failed:', data);
-      return res.status(400).json({
-        success: false,
-        message: data.message || 'Failed to initialize payment',
-        details: data
-      });
-    }
-
-    // Store transaction
-    transactions[reference] = {
-      status: 'pending',
-      email: email,
-      productId: productId || null,
-      productName: productName,
-      amount: amount / 100, // Convert back to KSh for display
-      amountInKobo: amount,
-      createdAt: new Date().toISOString(),
-      won: false,
-      ticketNumber: null,
-      message: null,
-      paystackData: data.data
-    };
-    saveTransactions();
-
-    console.log(`💰 Payment initialized → ${email} | Reference: ${reference}`);
-    console.log(`   Authorization URL: ${data.data.authorization_url}`);
+    console.log(`💰 Payment initialized → ${email} | Reference: ${payment.reference}`);
+    console.log(`   Authorization URL: ${payment.data.authorization_url}`);
 
     res.json({
       success: true,
       message: 'Payment initialized successfully',
-      reference: reference,
-      authorization_url: data.data.authorization_url,
-      access_code: data.data.access_code
+      reference: payment.reference,
+      authorization_url: payment.data.authorization_url,
+      access_code: payment.data.access_code
     });
 
   } catch (err) {
     console.error('Payment initialization error:', err);
+    if (err.paystackResponse) {
+      return res.status(400).json({ success: false, message: err.message, details: err.paystackResponse });
+    }
     res.status(500).json({
       success: false,
       message: 'Server error while initializing payment. Please try again.'
     });
-  }
-});
-
-/**
- * Compatibility endpoint for the existing frontend payment form.
- * Paystack checkout is used here; the browser opens the returned URL.
- */
-app.post('/api/stkpush', async (req, res) => {
-  try {
-    const { phone, email, productName = 'LKO Thrift Ticket', productId = 'ticket' } = req.body;
-    const normalizedPhone = String(phone || '').replace(/\D/g, '');
-
-    if (!/^[17]\d{8}$/.test(normalizedPhone)) {
-      return res.status(400).json({ success: false, message: 'Valid Kenyan phone number is required' });
-    }
-    const normalizedEmail = String(email || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      return res.status(400).json({ success: false, message: 'A valid email address is required' });
-    }
-    if (missingConfig.length) {
-      return res.status(500).json({ success: false, message: `Missing Paystack config: ${missingConfig.join(', ')}` });
-    }
-
-    const initialization = await fetch(`${PAYSTACK_API_URL}/transaction/initialize`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        email: normalizedEmail,
-        amount: Number(TICKET_AMOUNT),
-        reference: generateReference(),
-        callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/payment-callback.html`,
-        metadata: { productId, productName, phone: `+254${normalizedPhone}` }
-      })
-    });
-    const data = await initialization.json();
-
-    if (!data.status) {
-      return res.status(400).json({ success: false, message: data.message || 'Failed to initialize payment' });
-    }
-
-    const reference = data.data.reference;
-    transactions[reference] = {
-      status: 'pending',
-      email: normalizedEmail,
-      phone: `+254${normalizedPhone}`,
-      productId,
-      productName,
-      amount: Number(TICKET_AMOUNT) / 100,
-      amountInKobo: Number(TICKET_AMOUNT),
-      createdAt: new Date().toISOString(),
-      won: false,
-      ticketNumber: null,
-      message: null,
-      paystackData: data.data
-    };
-    saveTransactions();
-
-    res.json({
-      success: true,
-      checkoutRequestID: reference,
-      reference,
-      authorization_url: data.data.authorization_url
-    });
-  } catch (err) {
-    console.error('Payment initialization error:', err);
-    res.status(500).json({ success: false, message: 'Server error while initializing payment. Please try again.' });
   }
 });
 
@@ -431,46 +320,6 @@ app.get('/api/verify-payment/:reference', async (req, res) => {
       message: 'Server error while verifying payment. Please try again.'
     });
   }
-});
-
-/**
- * GET /api/status/:reference
- * Frontend polls this after payment is initialized
- */
-app.get('/api/status/:reference', async (req, res) => {
-  const reference = req.params.reference;
-  let transaction = transactions[reference];
-
-  if (!transaction) {
-    return res.status(404).json({ 
-      success: false, 
-      message: 'Transaction not found' 
-    });
-  }
-
-  try {
-    transaction = await verifyTransaction(reference);
-  } catch (err) {
-    console.error('Payment status verification error:', err);
-    return res.status(502).json({
-      success: false,
-      status: transaction.status,
-      message: 'Unable to verify payment right now. Please try again.'
-    });
-  }
-
-  // Return status (never reveal threshold info)
-  res.json({
-    success: true,
-    status: transaction.status,     // pending | success | failed
-    won: transaction.won || false,  // true only if they actually won
-    ticketNumber: transaction.ticketNumber || null,
-    email: transaction.email,
-    productName: transaction.productName,
-    amount: transaction.amount,
-    message: transaction.message,
-    createdAt: transaction.createdAt
-  });
 });
 
 /**
