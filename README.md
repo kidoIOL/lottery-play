@@ -53,3 +53,13 @@ The frontend can be hosted separately. Configure `FRONTEND_URL` so Paystack redi
 - Use HTTPS for deployed frontend and backend URLs.
 - Payment success is determined by Paystack verification, not by the browser redirect alone.
 - The win logic and ticket counter remain server-side.
+
+## Deploying to Vercel
+
+1. Import this repository into Vercel.
+2. Add `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_ENV`, `FRONTEND_URL`, `TICKET_AMOUNT`, and `ADMIN_SECRET_KEY` as environment variables.
+3. Deploy with the included `vercel.json`; the Paystack API is served from `/api`.
+4. Set `PAYMENT_API_URL` in `index.html` and `payment-callback.html` to the deployed Vercel URL.
+5. Configure the Paystack webhook URL as `https://your-project.vercel.app/api/webhook`.
+
+The local JSON files are used for development. Vercel functions have ephemeral storage, so configure durable storage before relying on the ticket counter and transaction history in production.
