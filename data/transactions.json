@@ -556,5 +556,23 @@
       "access_code": "456uswrgs1brf0s",
       "reference": "LKO-1790189319138-ajl4gg"
     }
+  },
+  "LKO-1790191358600-6dktvn": {
+    "status": "pending",
+    "email": "labanomonywa@gmail.com",
+    "phone": "114906881",
+    "productId": "tcl-tv",
+    "productName": "TCL 55\" Smart TV",
+    "amount": 30,
+    "amountInKobo": 3000,
+    "createdAt": "2026-09-23T19:22:39.538Z",
+    "won": false,
+    "ticketNumber": null,
+    "message": null,
+    "paystackData": {
+      "authorization_url": "https://checkout.paystack.com/mmrdcesvjuxyhfj",
+      "access_code": "mmrdcesvjuxyhfj",
+      "reference": "LKO-1790191358600-6dktvn"
+    }
   }
 }
