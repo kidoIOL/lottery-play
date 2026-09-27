@@ -379,7 +379,7 @@ app.post('/api/webhook', (req, res) => {
 app.get('/api/public-key', (req, res) => {
   res.json({
     success: true,
-    publicKey: PAYSTACK_PUBLIC_KEY || 'pk_test_c656a72e19b8f0e62df2fa9e1e599be64d94f096',
+    publicKey: PAYSTACK_PUBLIC_KEY || null,
     paystack_mode: PAYSTACK_ENV || 'test'
   });
 });
@@ -460,12 +460,12 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`\n🎟️  LKO Thrift Ticket Backend running on http://localhost:${PORT}`);
     console.log(`   💳 Paystack Mode: ${PAYSTACK_ENV || 'test'}`);
-    console.log(`   🔑 Paystack Public Key: ${PAYSTACK_PUBLIC_KEY?.substring(0, 30) || 'Not set'}...`);
+    console.log(`   🔑 Paystack Public Key configured: ${Boolean(PAYSTACK_PUBLIC_KEY)}`);
     console.log(`   💰 Ticket price: ${(Number(TICKET_AMOUNT) / 100).toFixed(2)} KSh`);
     console.log(`   🎯 Win threshold: ticket #${WIN_THRESHOLD}+`);
     console.log(`   🎲 Win chance: ${WIN_CHANCE * 100}% after threshold\n`);
     console.log(`   📊 Admin stats: http://localhost:${PORT}/api/admin/stats`);
-    console.log(`   🔒 Use header: x-admin-key: ${process.env.ADMIN_SECRET_KEY || 'your_secret_key'}\n`);
+    console.log(`   🔒 Admin key configured: ${Boolean(process.env.ADMIN_SECRET_KEY)}\n`);
   });
 }
 
