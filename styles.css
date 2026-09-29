@@ -169,6 +169,48 @@ nav a:hover {
   gap: 16px;
 }
 
+.winner-card {
+  position: relative;
+  margin: 32px 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 300px);
+  min-height: 120px;
+  padding: 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  z-index: 2;
+}
+
+.winner-card img {
+  width: 72px;
+  height: 92px;
+  flex: 0 0 72px;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 8px;
+}
+
+.winner-note strong,
+.winner-note span {
+  display: block;
+  line-height: 1.3;
+}
+
+.winner-note strong {
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.winner-note span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .floating-card {
   background: rgba(255,255,255,0.12);
   backdrop-filter: blur(8px);
@@ -519,6 +561,9 @@ nav a:hover {
 
 /* Responsive */
 @media (max-width: 768px) {
+  .winner-card {
+    margin-left: 0;
+  }
   .hero-content {
     flex-direction: column;
     text-align: center;
